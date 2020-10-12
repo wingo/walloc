@@ -19,14 +19,15 @@ wasm-ld --no-entry --import-memory -o test.wasm test.o walloc.o
 node test.js
 node test.js
 wasm log: walloc bytes: 0
-wasm log: allocated ptr: 0
-wasm log: walloc bytes: 1
 wasm log: allocated ptr: 131328
-wasm log: walloc bytes: 2
+wasm log: walloc bytes: 1
 wasm log: allocated ptr: 131336
-wasm log: walloc bytes: 3
+wasm log: walloc bytes: 2
 wasm log: allocated ptr: 131344
+wasm log: walloc bytes: 3
+wasm log: allocated ptr: 131352
 wasm log: walloc bytes: 4
+wasm log: allocated ptr: 131360
 ...
 ```
 
@@ -104,21 +105,21 @@ allocation.
 ### Small objects
 
 Small objects are allocated from segregated freelists.  The granule size
-is 8 bytes; there is a free list for allocations of up to 1 granule, 2
-granules, and so on up to 32 granules, which is 256 bytes, or a whole
-chunk.  If there is nothing on the corresponding freelist, walloc will
-allocate a new large object, then change its chunk kind in the page
-header to the granule size.  It then goes through the fresh chunk,
-threading the objects through each other onto a free list.
+is 8 bytes.  Small object allocations are packed in a chunk of uniform
+allocation size.  There are size classes for allocations of each size
+from 1 to 6 granules, then 8, 10, 16, and 32 granules.  For example, an
+allocation of e.g. 12 granules will be satisfied from a 16-granule
+chunk.  Each size class has its own free list.  When allocating, if
+there is nothing on the corresponding freelist, walloc will allocate a
+new large object, then change its chunk kind in the page header to the
+size class.  It then goes through the fresh chunk, threading the objects
+through each other onto a free list.
 
-Freeing a small object pushes it back on its size class's free list.  We
-know the size class (number of granules) by looking in the chunk kind in
+Freeing a small object pushes it back on its size class's free list.
+Given a pointer, we know its size class by looking in the chunk kind in
 the page header.
 
 ## License
 
-`walloc` is available under the [Blue Oak Model
-License](https://blueoakcouncil.org/license/1.0.0), version 1.0.0.  See
-[LICENSE.md](./LICENSE.md) for full details.  If you are thinking of
-using it and this license is a barrier to adoption, drop me a line at
-`wingo@igalia.com`.
+`walloc` is available under a permissive MIT-style license.  See
+[LICENSE.md](./LICENSE.md) for full details.

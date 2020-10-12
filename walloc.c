@@ -1,7 +1,24 @@
-// This module is part of https://github.com/wingo/walloc.
-// Its source code is governed by the Blue Oak Model License
-// 1.0.0, which is available on the web at
-// https://blueoakcouncil.org/license/1.0.0.
+// walloc.c: a small malloc implementation for use in WebAssembly targets
+// Copyright (c) 2020 Igalia, S.L.
+// 
+// Permission is hereby granted, free of charge, to any person obtaining a
+// copy of this software and associated documentation files (the
+// "Software"), to deal in the Software without restriction, including
+// without limitation the rights to use, copy, modify, merge, publish,
+// distribute, sublicense, and/or sell copies of the Software, and to
+// permit persons to whom the Software is furnished to do so, subject to
+// the following conditions:
+// 
+// The above copyright notice and this permission notice shall be included
+// in all copies or substantial portions of the Software.
+// 
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
+// OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+// MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
+// NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE
+// LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
+// OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
+// WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 typedef __SIZE_TYPE__ size_t;
 typedef __UINTPTR_TYPE__ uintptr_t;
@@ -52,11 +69,43 @@ struct chunk {
   char data[CHUNK_SIZE];
 };
 
+// There are small object pages for allocations of these sizes.
+#define FOR_EACH_SMALL_OBJECT_GRANULES(M) \
+  M(1) M(2) M(3) M(4) M(5) M(6) M(8) M(10) M(16) M(32)
+
 enum chunk_kind {
-  FREE_CHUNK = 0,
+#define DEFINE_SMALL_OBJECT_CHUNK_KIND(i) GRANULES_##i,
+  FOR_EACH_SMALL_OBJECT_GRANULES(DEFINE_SMALL_OBJECT_CHUNK_KIND)
+#undef DEFINE_SMALL_OBJECT_CHUNK_KIND
+
+  SMALL_OBJECT_CHUNK_KINDS,
+  FREE_CHUNK = 254,
   LARGE_OBJECT = 255
-  // Otherwise a chunk kind is a size in granules.
 };
+
+static const uint8_t small_object_granule_sizes[] = 
+{
+#define SMALL_OBJECT_GRANULE_SIZE(i) i,
+  FOR_EACH_SMALL_OBJECT_GRANULES(SMALL_OBJECT_GRANULE_SIZE)
+#undef SMALL_OBJECT_GRANULE_SIZE
+};
+
+static enum chunk_kind granules_to_chunk_kind(unsigned granules) {
+#define TEST_GRANULE_SIZE(i) if (granules <= i) return GRANULES_##i;
+  FOR_EACH_SMALL_OBJECT_GRANULES(TEST_GRANULE_SIZE);
+#undef TEST_GRANULE_SIZE
+  return LARGE_OBJECT;
+}
+  
+static unsigned chunk_kind_to_granules(enum chunk_kind kind) {
+  switch (kind) {
+#define CHUNK_KIND_GRANULE_SIZE(i) case GRANULES_##i: return i;
+  FOR_EACH_SMALL_OBJECT_GRANULES(CHUNK_KIND_GRANULE_SIZE);
+#undef CHUNK_KIND_GRANULE_SIZE
+    default:
+      return -1;
+  }
+}
 
 // Given a pointer P returned by malloc(), we get a header pointer via
 // P&~PAGE_MASK, and a chunk index via (P&PAGE_MASK)/CHUNKS_PER_PAGE.  If
@@ -103,11 +152,8 @@ static inline struct large_object* get_large_object(void *ptr) {
   return (struct large_object*) (((char*) ptr) - LARGE_OBJECT_HEADER_SIZE);
 }
 
-static struct freelist *small_object_freelists[LARGE_OBJECT_GRANULE_THRESHOLD];
+static struct freelist *small_object_freelists[SMALL_OBJECT_CHUNK_KINDS];
 static struct large_object *large_objects;
-
-STATIC_ASSERT_EQ(sizeof(small_object_freelists) / sizeof (struct freelist*),
-                 LARGE_OBJECT_GRANULE_THRESHOLD);
 
 extern void __heap_base;
 static size_t walloc_heap_size;
@@ -148,7 +194,7 @@ allocate_pages(size_t payload_size, size_t *n_allocated) {
 }
 
 static char*
-allocate_chunk(struct page *page, unsigned idx, uint8_t kind)
+allocate_chunk(struct page *page, unsigned idx, enum chunk_kind kind)
 {
   page->header.chunk_kinds[idx] = kind;
   return page->chunks[idx].data;
@@ -252,15 +298,15 @@ allocate_large_object(size_t size) {
 }
 
 static struct freelist*
-obtain_small_objects(size_t granules) {
+obtain_small_objects(enum chunk_kind kind) {
   struct large_object *obj = allocate_large_object(0);
   if (!obj) {
     return NULL;
   }
-  char *ptr = allocate_chunk(get_page(obj), get_chunk_index(obj), granules);
+  char *ptr = allocate_chunk(get_page(obj), get_chunk_index(obj), kind);
   char *end = ptr + CHUNK_SIZE;
   struct freelist *next = NULL;
-  size_t size = granules * GRANULE_SIZE;
+  size_t size = chunk_kind_to_granules(kind) * GRANULE_SIZE;
   for (size_t i = size; i <= CHUNK_SIZE; i += size) {
     struct freelist *head = (struct freelist*) (end - i);
     head->next = next;
@@ -272,15 +318,16 @@ obtain_small_objects(size_t granules) {
 static inline size_t size_to_granules(size_t size) {
   return (size + GRANULE_SIZE - 1) >> GRANULE_SIZE_LOG_2;
 }
-static struct freelist** get_small_object_freelist(size_t granules) {
-  return &small_object_freelists[granules - 1];
+static struct freelist** get_small_object_freelist(enum chunk_kind kind) {
+  ASSERT(kind < SMALL_OBJECT_CHUNK_KINDS);
+  return &small_object_freelists[kind];
 }
 
 static void*
-allocate_small(size_t granules) {
-  struct freelist **loc = get_small_object_freelist(granules);
+allocate_small(enum chunk_kind kind) {
+  struct freelist **loc = get_small_object_freelist(kind);
   if (!*loc) {
-    struct freelist *freelist = obtain_small_objects(granules);
+    struct freelist *freelist = obtain_small_objects(kind);
     if (!freelist) {
       return NULL;
     }
@@ -299,10 +346,9 @@ allocate_large(size_t size) {
   
 void*
 malloc(size_t size) {
-  if (size == 0) return NULL;
-  if (size <= LARGE_OBJECT_THRESHOLD)
-    return allocate_small(size_to_granules (size));
-  return allocate_large(size);
+  size_t granules = size_to_granules(size);
+  enum chunk_kind kind = granules_to_chunk_kind(granules);
+  return (kind == LARGE_OBJECT) ? allocate_large(size) : allocate_small(kind);
 }
 
 void

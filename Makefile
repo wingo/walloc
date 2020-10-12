@@ -1,8 +1,8 @@
 all: test
 
-CC=clang
-LD=wasm-ld
-JS=node
+CC?=clang
+LD?=wasm-ld
+JS?=node
 
 .PHONY: test
 
