@@ -172,13 +172,13 @@ them), treating them as if they were instances of `struct freelist`,
 pushing them onto the global freelist for 4-granules allocations.
 
 ```
-            in fresh chunk, next link for object N points to object N+1
-                     /--------\                     
-                     |        |
-+------------------+-^--------v-----+----------+
-| (padding, maybe) | object 0 | ... | object 7 |
-+------------------+----------+-----+----------+
-                   ^ 4-granule freelist now points here 
+           in fresh chunk, next link for object N points to object N+1
+                                 /--------\                     
+                                 |        |
+            +------------------+-^--------v-----+----------+
+granules=4: | (padding, maybe) | object 0 | ... | object 7 |
+            +------------------+----------+-----+----------+
+                               ^ 4-granule freelist now points here 
 ```
 
 The size classes were chosen so that any wasted space (padding) is less
