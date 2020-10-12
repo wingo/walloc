@@ -260,14 +260,30 @@ allocate_large_object(size_t size) {
     char *start = get_large_object_payload(best);
     char *end = start + best_size;
 
-    if (start_page == get_page(end - 1)) {
+    if (start_page == get_page(end - tail_size - 1)) {
+      // The allocation does not span a page boundary; yay.
       ASSERT_ALIGNED((uintptr_t)end, CHUNK_SIZE);
+    } else if (size < PAGE_SIZE - LARGE_OBJECT_HEADER_SIZE - CHUNK_SIZE) {
+      // If the allocation itself smaller than a page, split off the head, then
+      // fall through to maybe split the tail.
+      ASSERT_ALIGNED((uintptr_t)end, PAGE_SIZE);
+      size_t first_page_size = PAGE_SIZE - (((uintptr_t)start) & PAGE_MASK);
+      struct large_object *head = best;
+      head->size = first_page_size;
+      head->next = large_objects;
+      large_objects = head;
+
+      struct page *next_page = start_page + 1;
+      char *ptr = allocate_chunk(next_page, FIRST_ALLOCATABLE_CHUNK, LARGE_OBJECT);
+      best = (struct large_object *) ptr;
+      best->size = best_size = best_size - first_page_size - CHUNK_SIZE;
+      ASSERT(best_size >= size);
+      start = get_large_object_payload(best);
+      tail_size = (best_size - size) & ~CHUNK_MASK;
     } else {
       // A large object that spans more than one page will consume all of its
       // tail pages.  Therefore if the split traverses a page boundary, round up
-      // to page size.  For allocations smaller than a page (minus header size),
-      // it would be better to split off the head instead of the tail, then
-      // re-split the next page(s); a TODO.
+      // to page size.
       ASSERT_ALIGNED((uintptr_t)end, PAGE_SIZE);
       size_t first_page_size = PAGE_SIZE - (((uintptr_t)start) & PAGE_MASK);
       size_t tail_pages_size = align(size - first_page_size, PAGE_SIZE);
