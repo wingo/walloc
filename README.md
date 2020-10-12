@@ -172,8 +172,9 @@ them), treating them as if they were instances of `struct freelist`,
 pushing them onto the global freelist for 4-granules allocations.
 
 ```
-                      next link for object N points to object N+1
+            in fresh chunk, next link for object N points to object N+1
                      /--------\                     
+                     |        |
 +------------------+-^--------v-----+----------+
 | (padding, maybe) | object 0 | ... | object 7 |
 +------------------+----------+-----+----------+
