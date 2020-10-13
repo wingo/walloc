@@ -5,9 +5,26 @@ programs when targetting WebAssembly.  It is a single-file
 implementation with no dependencies: no stdlib, no JavaScript imports,
 no emscripten.
 
-Emscripten includes a couple of good malloc implementations; perhaps
-consider using one of those?  But if you are really looking for a
-bare-bones malloc, walloc is fine.
+Walloc was designed with the following priorities, in order:
+ 1. Standalone.  No stdlib needed; no emscripten.  Can be included in a
+    project without pulling in anything else.
+ 2. Reasonable allocation speed and fragmentation/overhead.
+ 3. Small size, to minimize download time.
+ 4. Standard interface: a drop-in replacement for malloc.
+ 5. Single-threaded (currently, anyway).
+
+Emscripten includes a couple of good malloc implementations
+([dlmalloc](https://github.com/emscripten-core/emscripten/blob/master/system/lib/dlmalloc.c)
+and
+[emmalloc](https://github.com/emscripten-core/emscripten/blob/master/system/lib/emmalloc.cpp));
+perhaps consider using one of those?  But if you are really looking for
+a bare-bones malloc, walloc is fine.
+
+Walloc isn't the smallest allocator out there either.  A simple
+bump-pointer allocator that never frees is the fastest thing you can
+have.  There is an alternate allocator for Rust,
+[wee_alloc](https://github.com/rustwasm/wee_alloc), which is said to be
+even smaller, though it is less space-efficient for small objects.
 
 ## Test
 
@@ -17,17 +34,22 @@ clang -DNDEBUG -Oz --target=wasm32 -nostdlib -c -o test.o test.c
 clang -DNDEBUG -Oz --target=wasm32 -nostdlib -c -o walloc.o walloc.c
 wasm-ld --no-entry --import-memory -o test.wasm test.o walloc.o
 node test.js
-node test.js
-wasm log: walloc bytes: 0
-wasm log: allocated ptr: 131328
-wasm log: walloc bytes: 1
+Seeding RNG with [3413801749, 3009063517, 1865401107, 1726435041].
+wasm log: walloc bytes: 529
 wasm log: allocated ptr: 131336
-wasm log: walloc bytes: 2
-wasm log: allocated ptr: 131344
-wasm log: walloc bytes: 3
-wasm log: allocated ptr: 131352
-wasm log: walloc bytes: 4
-wasm log: allocated ptr: 131360
+wasm log: walloc bytes: 1733
+wasm log: allocated ptr: 132104
+wasm log: walloc bytes: 240
+wasm log: allocated ptr: 133888
+wasm log: walloc bytes: 841
+wasm log: allocated ptr: 134152
+wasm log: walloc bytes: 1997
+wasm log: allocated ptr: 135176
+wasm log: walloc bytes: 1263
+wasm log: allocated ptr: 137224
+wasm log: walloc bytes: 355
+wasm log: allocated ptr: 138504
+wasm log: walloc bytes: 747
 ...
 ```
 
@@ -36,21 +58,22 @@ line, as above.
 
 ## Size
 
-The resulting wasm file is about 1.5 kB.
+The resulting wasm file is about 2 kB (uncompressed).
 
 ## Design
 
 When a C program is compiled to WebAssembly, the resulting wasm module
-(usually) has associated linear memory.  It can be compiled in a way
-that the memory is created by the module when it's instantiated, or such
-that the module is given a memory by its host.  By default, wasm modules
-import their memory.
+(usually) has associated linear memory.  It can be linked in a way that
+the memory is created by the module when it's instantiated, or such that
+the module is given a memory by its host.  The above example passed
+`--import-memory` to the linker, allowing the host to bound memory
+usage for the module instance.
 
 The linear memory has the usual data, stack, and heap segments.  The
 data and stack are placed first.  The heap starts at the `&__heap_base`
-symbol.  All bytes above `&__heap_base` can be used by the wasm program
-as it likes.  So `&__heap_base` is the lower bound of memory managed by
-walloc.
+symbol.  (This symbol is computed and defined by the linker.)  All bytes
+above `&__heap_base` can be used by the wasm program as it likes.  So
+`&__heap_base` is the lower bound of memory managed by walloc.
 
 ```
                                               memory growth ->
@@ -68,11 +91,7 @@ will expand the memory if it runs out.  The host can specify a maximum
 memory size, in pages; if no more pages are available, walloc's `malloc`
 will simply return `NULL`; handling out-of-memory is up to the caller.
 
-If you really care about the allocator's design, probably you should use
-some other allocator whose characteristics are more well known!
-
-That said, walloc has two allocation strategies: small and large
-objects.
+Walloc has two allocation strategies: small and large objects.
 
 ### Large objects
 
@@ -110,12 +129,13 @@ bytes.
 ^ +0          ^ +256    ^ +512                      ^ +64 kB
 ```
 
-So each page is 65536 bytes, and each chunk is 256 bytes, meaning there
-are 256 chunks in a page.  So the first chunk in a page that begins an
-allocated object, large or small, contains a header chunk.  The page
-header has a byte for each chunk in the page.  The byte is 255 if the
-corresponding chunk starts a large object; otherwise the byte indicates
-the size class for packed small-object allocations (see below).
+As each page is 65536 bytes, and each chunk is 256 bytes, there are
+therefore 256 chunks in a page.  The first chunk in a page that begins
+an allocated object, large or small, contains a header chunk.  The page
+header has a byte for each of the 256 chunks in the page.  The byte is
+255 if the corresponding chunk starts a large object; otherwise the byte
+indicates the size class for packed small-object allocations (see
+below).
 
 ```
 +-------------+---------+---------+----------+-----------+
@@ -159,7 +179,7 @@ chunk, threading the objects through each other onto a free list.
 +-------------+---------+---------+------------+---------------------+
 | page header | large object 1    | granules=4 | large object 2' ... |
 +-------------+---------+---------+------------+---------------------+
-^ +0          ^ +256    ^ +512    ^ +768       + +1024              ^ +64 kB
+^ +0          ^ +256    ^ +512    ^ +768       + +1024               ^ +64 kB
 ```
 
 In this example, we imagine that the 4-granules freelist was empty, and
