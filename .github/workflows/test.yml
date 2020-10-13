@@ -14,4 +14,4 @@ jobs:
     steps:
     - uses: actions/checkout@v2
     - name: test
-      run: make test CC=clang LD=wasm-ld-10 JS=node
+      run: make test CC=clang LD="wasm-ld-10 --allow-undefined" JS=node
