@@ -14,6 +14,6 @@ jobs:
     steps:
     - uses: actions/checkout@v2
     - name: install lld
-      run: sudo apt-get install lld
+      run: sudo apt-get install lld-10
     - name: test
       run: make test CC=clang LD=wasm-ld JS=node
