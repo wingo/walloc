@@ -20,12 +20,6 @@ and
 perhaps consider using one of those?  But if you are really looking for
 a bare-bones malloc, walloc is fine.
 
-Walloc isn't the smallest allocator out there either.  A simple
-bump-pointer allocator that never frees is the fastest thing you can
-have.  There is an alternate allocator for Rust,
-[wee_alloc](https://github.com/rustwasm/wee_alloc), which is said to be
-even smaller, though it is less space-efficient for small objects.
-
 ## Test
 
 ```
@@ -59,6 +53,13 @@ line, as above.
 ## Size
 
 The resulting wasm file is about 2 kB (uncompressed).
+
+Walloc isn't the smallest allocator out there.  A simple bump-pointer
+allocator that never frees is the fastest thing you can have.  There is
+also an alternate allocator for Rust,
+[wee_alloc](https://github.com/rustwasm/wee_alloc), which is said to be
+smaller than walloc, though it is less space-efficient for small
+objects.  But still, walloc is pretty small.
 
 ## Design
 
