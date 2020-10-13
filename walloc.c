@@ -291,7 +291,7 @@ allocate_large_object(size_t size) {
       struct page *next_page = start_page + 1;
       char *ptr = allocate_chunk(next_page, FIRST_ALLOCATABLE_CHUNK, LARGE_OBJECT);
       best = (struct large_object *) ptr;
-      best->size = best_size = best_size - first_page_size - CHUNK_SIZE;
+      best->size = best_size = best_size - first_page_size - CHUNK_SIZE - LARGE_OBJECT_HEADER_SIZE;
       ASSERT(best_size >= size);
       start = get_large_object_payload(best);
       tail_size = (best_size - size) & ~CHUNK_MASK;
