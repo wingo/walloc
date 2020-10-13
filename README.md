@@ -28,23 +28,21 @@ clang -DNDEBUG -Oz --target=wasm32 -nostdlib -c -o test.o test.c
 clang -DNDEBUG -Oz --target=wasm32 -nostdlib -c -o walloc.o walloc.c
 wasm-ld --no-entry --import-memory -o test.wasm test.o walloc.o
 node test.js
-Seeding RNG with [3413801749, 3009063517, 1865401107, 1726435041].
-wasm log: walloc bytes: 529
-wasm log: allocated ptr: 131336
-wasm log: walloc bytes: 1733
-wasm log: allocated ptr: 132104
-wasm log: walloc bytes: 240
-wasm log: allocated ptr: 133888
-wasm log: walloc bytes: 841
-wasm log: allocated ptr: 134152
-wasm log: walloc bytes: 1997
-wasm log: allocated ptr: 135176
-wasm log: walloc bytes: 1263
-wasm log: allocated ptr: 137224
-wasm log: walloc bytes: 355
-wasm log: allocated ptr: 138504
-wasm log: walloc bytes: 747
+Seeding RNG with [2959819678, 4094888344, 3121363251, 822200628].
+Allocating 2 MB, iteration 0.
+Freeing 2031 allocations.
+Allocating 2 MB, iteration 1.
+Freeing 1956 allocations.
+Allocating 2 MB, iteration 2.
+Freeing 2000 allocations.
+Allocating 2 MB, iteration 3.
+Freeing 2037 allocations.
 ...
+Allocating 2 MB, iteration 38.
+Freeing 2029 allocations.
+Allocating 2 MB, iteration 39.
+Freeing 2023 allocations.
+Success.
 ```
 
 You can link `walloc.c` into your program just by adding it to your link

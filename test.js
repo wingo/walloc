@@ -109,16 +109,21 @@ let {walloc, wfree} = instance.exports;
 
 for (let j = 0; j < 40; j++) {
     let allocs = [];
-    for (let i = 0; i < 2000; i++) {
+    console.log(`Allocating 2 MB, iteration ${j}.`)
+    let count = 0;
+    for (let allocated = 0; allocated < 2e6; count++) {
         let size = randu(rand(), 2000);
         let free_priority = rand();
         let ptr = walloc(size);
         memory.record_malloc(ptr, size);
         allocs.push([free_priority, ptr]);
+        allocated += size;
     }
+    console.log(`Freeing ${count} allocations.`)
     allocs.sort(([p1,ptr1], [p2,ptr2]) => (p1 - p2));
     for (let [p, ptr] of allocs) {
         memory.record_free(ptr);
         wfree(ptr)
     }
 }
+console.log(`Success.`)
