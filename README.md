@@ -131,7 +131,8 @@ chunk would be if it includes the entire page.
 Freeing a large object pushes it on the global freelist.  We know a
 pointer is a large object by looking at the page header.  We know the
 size of the allocation, because the large object header precedes the
-allocation.
+allocation.  When the next large object allocation happens after a free,
+the freelist will be compacted by merging adjacent large objects.
 
 ### Small objects
 
