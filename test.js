@@ -115,6 +115,7 @@ for (let j = 0; j < 40; j++) {
         let size = randu(rand(), 2000);
         let free_priority = rand();
         let ptr = walloc(size);
+        assert((ptr % 8) == 0, "unaligned result");
         memory.record_malloc(ptr, size);
         allocs.push([free_priority, ptr]);
         allocated += size;
