@@ -38,9 +38,13 @@ typedef __UINT8_TYPE__ uint8_t;
 static inline size_t max(size_t a, size_t b) {
   return a < b ? b : a;
 }
+#if __has_constexpr_builtin(__builtin_align_up)
+#define align __builtin_align_up
+#else
 static inline uintptr_t align(uintptr_t val, uintptr_t alignment) {
   return (val + alignment - 1) & ~(alignment - 1);
 }
+#endif
 #define ASSERT_ALIGNED(x, y) ASSERT((x) == align((x), y))
 
 #define CHUNK_SIZE 256
